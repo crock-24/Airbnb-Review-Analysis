@@ -1,0 +1,128 @@
+---
+title: "MA4710 Project Part 2"
+author: "Cody"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## An interpretation of the scatterplot matrix
+
+```{r, echo=FALSE, comment=''}
+set.seed(10)
+library(car)
+library(olsrr)
+
+#Load in NYC Airbnb data
+NYC <- read.csv('AB_NYC_2019.csv')
+NYC <- subset(NYC, select = -c(latitude,longitude, last_review, host_id, host_name, name, id, neighbourhood, neighbourhood_group, room_type))
+NYC <- na.omit(NYC)
+
+#Make reviews per month reviews per year instead
+NYC$reviews_per_year <- NYC$reviews_per_month * 12
+
+#reducing the data points down to a random sample of 1000 for better and
+# faster processing
+NYC <- NYC[sample(nrow(NYC), 1000), ]
+
+#create linear model for NYC AirBNB data
+NYC.lm <- lm(reviews_per_year  ~  minimum_nights + price + calculated_host_listings_count + availability_365 + number_of_reviews, NYC)
+
+#Create a scatter plot matrix of your response and five predictor variables.
+scatterplotMatrix(~reviews_per_year + minimum_nights + price + calculated_host_listings_count + availability_365 + number_of_reviews, NYC, smooth=FALSE)
+```
+
+* The scatter plot matrix shows the distribution of individual predictors, in this case each predictor appears like it is skewed towards the higher end. 
+* The scatter plot matrix also shows relationships that might exist between a predictor and other predictors in the model. There does appear to be relationships in the data that we might want to explore later on. 
+
+## An assessment of the normality assumption, which refers to appropriate graphs and the Shapiro-Wilk p-value
+```{r, echo=FALSE, comment = ''}
+#Create a normal q-q plot of the standardized residuals, including a reference line, 
+# and also perform the Shapiro-Wilk test on the set of standardized residuals.
+plot(NYC.lm, which = 2)
+shapiro.test(rstandard(NYC.lm))
+```
+
+* The normality assumption appears to be violated. The QQ plot shows that  the data skews higher than anticipated as the theoretical upper quantiles are reached. 
+* The Shapiro Wilks results tell us that is unlikely that the data is coming from a normally distributed population because the p value for a null hypothesis of normality is very low. 
+
+## An assessment of the linearity assumption, which refers to the appropriate graphs you created in the program
+```{r, echo=FALSE, comment = ''}
+plot(NYC.lm, which = 1)
+cat('The R squared value of the data is:\n')
+cat(summary(NYC.lm)$r.squared)
+```
+
+* If the data was linear, the residuals would be scattered approximately evenly as the predicted values increase. The trend line for the residuals would be a horizontal line approximately centered at 0. This does not appear to be the case with this data, as the red trend line shows some nonlinear deviation. 
+* The R squared value is another indicator of linearity. A value of 0.39 as is in this case indicates that there is a weak positive relationship between the linear fitted values and the actual values. 
+
+
+## An assessment of the homoscedasticity assumption, which refers to appropriate graphs you created
+```{r, echo=FALSE}
+#Create a location-spread plot.
+plot(NYC.lm, which = 3)
+```
+
+* The data does not appear to meet the homoscedasticity assumption. There is a clear upwards trajectory in the trend line, this indicates that the variance fans out and increases as the predicted values increase. 
+
+## A list of points which appear to be high-leverage points 
+```{r, echo=FALSE, comment = ''}
+#Create a residual-leverage plot.
+plot(NYC.lm, which = 5)
+abline(v = 2*(sum(hatvalues(NYC.lm))+1)/nrow(NYC))
+cat('Indicies of leverage points greater than 0.014:\n')
+cat(which(hatvalues(NYC.lm) > 2*(sum(hatvalues(NYC.lm))+1)/nrow(NYC))[1:27])
+cat('\n')
+cat(which(hatvalues(NYC.lm) > 2*(sum(hatvalues(NYC.lm))+1)/nrow(NYC))[28:51])
+```
+
+* The leverage vs residual plot is a good way to visualize if certain points have high leverage.
+* A vertical line is drawn in at the value (2(p+1)/n), leverage values that fall to the right of this vertical line are considered to be high leverage points.
+* A rule of thumb to determine if a point is high leverage considers the formula (2*(p+1)/n)). For easier display purposes, I listed leverage points that were a little higher than this value to limit the number of indices that showed up.
+
+
+## A list of points which appear be outliers or 
+```{r, echo=FALSE, comment=''}
+#Create a residual-leverage plot.
+plot(rstandard(NYC.lm), ylab = 'Standardized Residuals')
+abline(h = 3)
+abline(h = -3)
+cat('Indicies of standardized residuals greater than 3:\n')
+cat(which(rstandard(NYC.lm) > 3))
+```
+
+* I am considering outliers as points having a standardized residual with an absolute value greater than 3. 99% of observations in a normally distributed population should fall within 3 standard deviations of the mean, so about only 1% of data points should be this extreme. 
+* Listed above are the indices of review frequency data points that have standardized residuals greater than 3. 
+
+
+## A list of points which appear to be influential on various aspects of the model fit describe the reasoning you use, by referring to appropriate graphs, when coming to a conclusion as to whether or not an observation is influential
+```{r, echo=FALSE, comment = ''}
+#Create a Cook's distance plot.
+plot(NYC.lm, which = 5)
+cat('points which have a Cook distance greater than 0.1:\n')
+cat(which(cooks.distance(NYC.lm) > 0.1))
+
+#Create an index plot of DFFITS.
+ols_plot_dffits(NYC.lm)
+
+#Create a panel of index plots of DFBETAS.
+par(mfrow = c(3,2))
+ols_plot_dfbetas(NYC.lm)
+```
+
+* Point 870 is clearly influential on the model as its cook's distance is greater than 1. 
+* Points 213 and 445 are higher influence points because they are higher leverage points with fairly large standardized residuals, however their cook's distance is still less than 1 so they are less influential than point 870. 
+
+## An interpretation of the residual plus component plots in regards to whether or not any variables add anything of value to the model in the presence of the other predictors
+```{r, echo=FALSE}
+#Create a panel of residual plus component plots.
+crPlots(NYC.lm, terms = ~., id = T)
+```
+
+* Total number of reviews shows a clear positive linear relationship with frequency of reviews. 
+* Minimum reviews appears to have relatively strong negative linear relationship with the frequency of reviews. There is a high leverage, high influence point (Point 39876) that is pulling the slope of the line characterizing this relationship up. 
+
+

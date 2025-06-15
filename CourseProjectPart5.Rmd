@@ -1,0 +1,187 @@
+---
+title: "CourseProjectPart5"
+author: "Cody"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fit full model
+
+You will look at a variety of ways to detect the presence of collinearity in your set of numerical predictors. Include "all" predictors from your data set in a full model
+
+```{r, echo=FALSE, comment='', message=FALSE}
+setwd("/Users/crorick/Documents/MS\ Applied\ Stats\ Fall\ 2023/MA4710/Course\ Project")
+library(car)
+library(leaps)
+set.seed(10)
+
+#Load in NYC Airbnb data
+NYC <- read.csv('AB_NYC_2019.csv')
+NYC <- subset(NYC, select = -c(latitude,longitude, last_review, host_id, neighbourhood, host_name, name, id))
+NYC <- na.omit(NYC)
+
+#Make reviews per month reviews per year instead
+NYC$reviews_per_year <- NYC$reviews_per_month * 12
+
+#Reducing the data points down to a random sample of 1000 for better and
+# faster processing
+NYC <- NYC[sample(nrow(NYC), 1000), ]
+
+#There is not enough data on staten Island so removing it from the data
+NYC <- NYC[!(NYC$neighbourhood_group == 'Staten Island'),]
+
+#make sure factor variables are in data as factors
+NYC$neighbourhood_group <- as.factor(NYC$neighbourhood_group)
+NYC$room_type <- as.factor(NYC$room_type)
+
+# 1 You will look at a variety of ways to detect the presence of collinearity in 
+# your set of numerical predictors. Include "all" predictors from your data set in a full model, 
+# with the following caveats:
+NYC.lm <- lm(reviews_per_year  ~ calculated_host_listings_count + price + minimum_nights + availability_365 + number_of_reviews + neighbourhood_group + room_type, NYC)
+summary(NYC.lm)
+```
+
+## Assessing Collinearity
+
+Assess this full model for problems with collinearity by calculating the VIF's for each variable and the condition number (remember to scale the variables); you can use the crude rules of thumb mentioned in your book and notes.
+
+```{r, echo=FALSE, comment='', message=FALSE}
+mat.data.pc <- model.matrix(~ . - reviews_per_year - reviews_per_month + 0, NYC)
+NYC.pc <- prcomp(mat.data.pc, scale=T)
+NYC.pc.sdev <- NYC.pc$sdev
+NYC.con.ind <- NYC.pc.sdev[1] / NYC.pc.sdev
+cat('The condition indicies are:\n')
+cat(NYC.con.ind)
+cat('\n')
+cat('The VIF values are:\n')
+vif(NYC.lm)
+```
+
+## Collinearity Comments
+
+In your summary, explain the reasoning you use in coming to a decision if there is a serious problem with collinearity in your set of predictors, referencing the condition number and the values of the VIF's. 
+
+* The VIF's did not point to any predictors being collinear with any other predictor, as the largest VIF did not get above 5, which is the rule of thumb for being moderately problematic in regards to collinearity. Most of the condition indices were fine too other than the maximum, the condition number is incredibly large. This indicates that there is collinearity with one of the principal components.
+
+## Predictor Selection
+
+Use a few different variable selection procedures on your full data set.
+
+**Forward selection**
+
+```{r, echo=FALSE, comment = '', warning = FALSE, message=FALSE}
+library(olsrr)
+NYC.null <- lm(reviews_per_year ~ 1, NYC)
+step(NYC.null, scope=formula(NYC.lm), direction='forward', trace = 0)
+```
+
+**Stepwise selection**
+
+```{r, echo=FALSE, comment = ''}
+step(NYC.lm, direction='both', trace = 0)
+```
+
+**Backward selection**
+
+```{r, echo=FALSE, comment = ''}
+step(NYC.lm, direction='backward', trace = 0)
+```
+
+* All selection procedures landed on including availability_365, minimum_nights, Number_of_reviews, and neighbourhood_group.
+
+**Mallow's Cp**
+
+```{r, echo=FALSE, comment = ''}
+NYC.rs <- regsubsets(reviews_per_year ~ . - reviews_per_month, NYC, nbest = 1)
+subsets(NYC.rs, statistic='cp', legend = FALSE, ylim = c(1,9), xlim = c(3,9))
+abline(a=1, b=1, col='red', lty='dashed', lwd=2)
+```
+
+* The Mallow's Cp for most of the recommended models fall under the p+1 rule of thumb for a properly fit model. These models do not include the full categorical variable, however, it is picking apart singular variables in the category which is not good practice. This information will be considered but not weighted heavily in deciding the final model. 
+
+**Adjusted R squared value**
+
+```{r, echo=FALSE, comment = ''}
+subsets(NYC.rs, statistic='adjr2', legend = FALSE, ylim = c(0.39, 0.402), xlim = c(2,7))
+```
+
+* Adjusted R squared values are very similar between recommended models indicating that all models will have similar predictive power.
+
+**Optimized for adjusted R-squared value**
+
+```{r, echo=FALSE, comment = ''}
+plot(NYC.rs, scale = 'adjr2')
+```
+
+* The minimum_nights, availability_365, and number_of_reviews variables are all included in the majority of models that are optimized for the adjusted R-squared value.
+
+**Model chosen from variable selection tools**
+
+```{r, echo=FALSE, comment = ''}
+NYC.lm2 <- lm(reviews_per_year  ~ minimum_nights + availability_365 + number_of_reviews + neighbourhood_group, NYC)
+summary(NYC.lm2)
+```
+
+* Since all of the step AIC selection procedures landed on Number_of_reviews, minimum_nights, availability_365, and neighborhood group as variables to include in the model, I decided these predictors would be good to include.
+
+## Final complete model
+
+Use your accumulated knowledge with your data set to ideally settle on a model.
+
+**Final Model**
+
+```{r, echo=FALSE, comment = ''}
+new_neighbourhood_group <- NYC$neighbourhood_group
+levels(new_neighbourhood_group)[2:3] <- "Brooklyn.Manhattan"
+NYC.lm3 <- lm(reviews_per_year  ~ minimum_nights + availability_365 + number_of_reviews + new_neighbourhood_group, NYC, weights = minimum_nights^2)
+summary(NYC.lm3)
+```
+
+* In the Final model, I also included a weighting of the residuals based on the minimum nights variable, as this raises the correlation coefficient of the model significantly. The residuals became more spread out as the minimum required number of nights to stay increased, which is why I included this in the model fit as a residual weight. 
+
+**Residuals vs Fitted values**
+
+```{r, echo=FALSE, comment = ''}
+plot(NYC.lm3$fitted.values, rstandard(NYC.lm3))
+abline(h=0)
+```
+
+* The residuals are scattered evenly around the centered horizontal line, which indicates the linearity assumption is a good one. 
+
+**Homoscedasticity**
+
+```{r, echo=FALSE, comment = ''}
+# homoscedasticity
+plot(NYC.lm3, which = 3)
+ncvTest(NYC.lm3)
+```
+
+* The scale-location plot now shows a horizontal line indicating consistent variability of the data. The NCV test results show further confirmation of the results seen in the plot. 
+
+**Influential Observations**
+
+```{r, echo=FALSE, comment = ''}
+# The presence of influential observations (no long lists are needed, just look at the influencePlot or similar and point out any glaring problems)
+influencePlot(NYC.lm3)
+```
+
+* There are outliers in this dataset that are skewing results (points 39876 and 3606 on the influence plot above). These were left in as I can not make the judgement of whether or not these points are legitimate. With such a large cook's distance however it is clear there are very influential points in this dataset. 
+
+**Collinearity detection**
+
+```{r, echo=FALSE, comment = ''}
+# collinearity
+mat.data.pc <- model.matrix(~ minimum_nights + availability_365 + number_of_reviews + neighbourhood_group + 0, NYC)
+NYC.pc <- prcomp(mat.data.pc, scale=T)
+NYC.pc.sdev <- NYC.pc$sdev
+NYC.con.ind <- NYC.pc.sdev[1] / NYC.pc.sdev
+cat("The condition number is: \n")
+cat(max(NYC.con.ind))
+vif(NYC.lm)
+```
+
+* The VIF indicates that collinearity is not an issue with the predictors directly, so I am not concerned about it with this dataset, as this means the predictor variables are largely orthogonal to each other and add unique predictive power to the data. The condition number is very large, however, which means that there is overlap in principal components. 

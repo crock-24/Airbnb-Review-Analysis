@@ -1,0 +1,176 @@
+---
+title: "MA4710 Project"
+author: "Cody Rorick"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data description
+
+Since 2008, guests and hosts have used Airbnb to expand on traveling possibilities and present more unique, personalized way of experiencing the world. This dataset describes the listing activity and metrics in NYC, NY for 2019. 
+
+The numerical predictors in this dataset are: 
+
+* Host Total number of listings (does the host own other properties on airbnb)
+
+* Total number of reviews
+
+* Price ($)
+
+* Minimum nights per stay
+
+* Number of days available in the year
+
+The categorical predictors are: 
+
+* Host Total number of listings
+
+* Room type (Entire home/apt, Private room, etc..)
+
+The response variable of this data set is:
+
+* Frequency of reviews the listing gets (reviews per month)
+
+I am expecting to see a positive correlation between the total number of reviews and the frequency of reviews. The other variables I am less sure about but curious to dive into, as any one of these could have an impact on the frequency a listing gets reviewed. Airbnb reviews are a great way to establish legitimacy and bring attention to your posting, so having the ability to bring in more reviews per month is an important metric to rental property owners. 
+
+## Regression equation
+
+```{r, echo=FALSE, comment=""}
+#setwd("/Users/crorick/Documents/MS\ Applied\ Stats\ Fall\ 2023/MA4710/Course\ Project")
+set.seed(10)
+NYC <- read.csv('AB_NYC_2019.csv')
+NYC <- subset(NYC, select = -c(latitude,longitude, last_review, host_id, host_name, name, id, neighbourhood, neighbourhood_group, room_type))
+NYC <- na.omit(NYC)
+
+NYC$reviews_per_year <- NYC$reviews_per_month * 12
+
+#reducing the data points down to a random sample of 1000 for better and
+# faster processing
+NYC <- NYC[sample(nrow(NYC), 1000), ]
+
+X <- with(NYC, cbind(1, minimum_nights, price, calculated_host_listings_count, availability_365, number_of_reviews))
+colnames(X) <- c('intercept', 'min_night_stay', 'price', 'host_listings', 'availability', 'tot_reviews')
+Y <- NYC$reviews_per_year
+
+beta.hat <- solve(crossprod(X), crossprod(X,Y))
+
+dummy <- sprintf("Review Frequency per Year = %.4f + %.4f * %s + %.4f * %s\n + %.4f * %s + %.4f * %s + %.4f * %s", beta.hat[1], beta.hat[2], colnames(X)[2], beta.hat[3], colnames(X)[3], beta.hat[4], colnames(X)[4], beta.hat[5], colnames(X)[5], beta.hat[6], colnames(X)[6])
+
+cat(dummy)
+
+```
+
+## Are coefficients non negligible?
+
+A table of the t-statistics, standard errors, and p-values in each of the tests that the null hypothesis coefficients are zero and alternative hypothesis that they are not equal to zero
+```{r, echo=FALSE, comment=""}
+#Get predictions 
+Y.pred <- X %*% beta.hat
+
+#Find residuals and sum of squares error
+res <- Y - Y.pred
+df <- nrow(res) - ncol(X)
+SSE <- crossprod(res)
+Variance <- SSE / df
+
+#Calculating SSE and degrees of freedom for reduced model 
+reduced.Y.pred <- mean(Y)
+reduced.res <- Y - reduced.Y.pred
+reduced.df <- length(reduced.res) - 1
+reduced.SSE <- crossprod(reduced.res)
+
+#calculating the covariance matrix and standard error of the beta coefficients
+cov.matrix <- solve(crossprod(X))
+scaled.cov.matrix <- cov.matrix * as.vector(Variance)
+beta.variances <- diag(scaled.cov.matrix)
+beta.se <- sqrt(beta.variances)
+
+#Calculating the p-values of the different beta coefficients equaling 0
+t.stat <- beta.hat / beta.se
+t.stat.abs.value <- abs(t.stat)
+p.values <- pt(t.stat.abs.value, df, lower.tail = FALSE)
+
+dummy <- sprintf("%s = %.4f t = %.4f p = %.4f\n%s = %.4f t = %.4f p = %.4f\n%s = %.4f t = %.4f p = %.4f\n%s = %.4f t = %.4f p = %.4f\n%s = %.4f t = %.4f p = %.4f\n%s = %.4f t = %.4f p = %.4f", colnames(X)[1], beta.hat[1], t.stat[1], p.values[1], colnames(X)[2], beta.hat[2], t.stat[2], p.values[2], colnames(X)[3], beta.hat[3], t.stat[3], p.values[3], colnames(X)[4], beta.hat[4], t.stat[4], p.values[4], colnames(X)[5], beta.hat[5], t.stat[5], p.values[5], colnames(X)[6], beta.hat[6], t.stat[6], p.values[6])
+
+cat(dummy)
+
+```
+
+## Regression coefficient significance interpretation
+
+All coefficients used except host_listings were shown to be significant at a 0.05-significance level in predicting frequency of reviews. 
+
+* intercept = 8.9581 (reviews/year), implies if all other factors are zero, baseline frequency starts at 8.9581 reviews per year. This number isn't meaningful to interpret
+
+* price = -0.0004 (reviews/year*$), implies that for every dollar increase in Airbnb price, the frequency of reviews you get goes down by 0.0004 per year because the coefficient is negative
+
+* min_night_stay = -0.1191 (reviews/year*days), implies that every additional required night for a minimum stay, the frequency of reviews goes down 0.1191 per year because the coefficient is negative
+
+* host_listings = 0.0193 (reviews/year*listings), implies that every additional property a host owns, the frequency of reviews goes up 0.0193 per year
+
+* availability = 0.0127 (reviews/year*days), implies that every additional available booking day a property has, the frequency of reviews goes up by 0.0127 per year
+
+* tot_reviews = 0.2218 (reviews/year*reviews), implies that every additional review a property has, the frequency of reviews goes up by 0.2218 per year
+
+
+## F statistic, P-value, Sigma, and Correlation of Overall Regression
+
+```{r, echo=FALSE, comment=""}
+#Calculating the F statistic for completely reduced model vs full model
+f.stat <- ((as.vector(reduced.SSE) - as.vector(SSE)) / (reduced.df - df)) / (as.vector(SSE) / df)
+dummy <- sprintf("F statistic = %.4f\n", f.stat)
+cat(dummy)
+p.value <- pf(f.stat, (reduced.df - df), df, lower.tail=FALSE)
+dummy <- sprintf("P value = %.4f\n", p.value)
+cat(dummy)
+sigma <- sqrt(Variance)
+dummy <- sprintf("Sigma = %.4f\n", sigma)
+cat(dummy)
+R <- cor(Y, Y.pred)
+R.sq <- R^2
+dummy <- sprintf("R squared value = %.4f\n", R.sq)
+cat(dummy)
+R.sq.adjust <- 1 - ((nrow(X) - 1)/(nrow(X) - ncol(X))) * (1-R.sq)
+dummy <- sprintf("adjusted R squared value = %.4f", R.sq.adjust)
+cat(dummy)
+```
+
+## Interpretation of sigma and R squared
+
+```{r, echo=FALSE, comment=""}
+dummy <- sprintf("The R squared value insinuates that %.4f percent of the variation in\nreview frequency can be attributed to the predictors included in this model", R.sq*100)
+cat(dummy)
+dummy <- sprintf("A sigma of %.4f reviews per year is an indicator of the amount of variation\nthat occurs around a predicted review frequency", sigma)
+cat(dummy)
+```
+
+## P value associated with other hypothesis tests
+
+**The anova table below indicates if host number of host listings coefficients is equal to zero controlled for the other predictors. The p value indicates that we fail to reject the null hypothesis that it is equal to 0.**
+```{r, echo=FALSE, comment=""}
+rpm.lm <- lm(reviews_per_year  ~  minimum_nights + price + calculated_host_listings_count + availability_365 + number_of_reviews, NYC)
+reduced1.rpm.lm <- update(rpm.lm, ~ . - calculated_host_listings_count)
+lm1.anova <- anova(reduced1.rpm.lm, rpm.lm)
+print(lm1.anova)
+```
+
+**The anova table below indicates whether or not the yearly availability coefficient could be equal to 0.015 reviews/year * days. The P value indicates that we fail to reject the null hypothesis that the coefficient is equal to this value.**
+
+```{r, echo=FALSE, comment=""}
+reduced2.rpm.lm <- update(rpm.lm, ~ . - availability_365 + offset(I(0.015 * availability_365)))
+lm2.anova <- anova(reduced2.rpm.lm, rpm.lm)
+print(lm2.anova)
+```
+
+**The anova table below indicates if yearly availability and minimum night stay coefficients give orthogonal information. The P value indicates that we should reject the null hypothesis that minimum night stay and yearly availability give the same information in the regression model.** 
+```{r, echo=FALSE, comment=""}
+reduced3.rpm.lm <- update(rpm.lm, ~ . - availability_365 - minimum_nights + I(availability_365 + minimum_nights))
+lm3.anova <- anova(reduced3.rpm.lm, rpm.lm)
+print(lm3.anova)
+```
+
+

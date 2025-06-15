@@ -1,0 +1,177 @@
+---
+title: "Regression Analysis Part 4"
+author: "Cody"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Refitting a new base model
+
+```{r, echo=FALSE, comment=""}
+setwd("/Users/crorick/Documents/MS\ Applied\ Stats\ Fall\ 2023/MA4710/Course\ Project")
+set.seed(10)
+
+# load in NYC Airbnb data
+NYC <- read.csv('AB_NYC_2019.csv')
+NYC <- subset(NYC, select = -c(latitude,longitude, price, calculated_host_listings_count, last_review, host_id, neighbourhood, host_name, name, id))
+NYC <- na.omit(NYC)
+
+#Make reviews per month reviews per year instead
+NYC$reviews_per_year <- NYC$reviews_per_month * 12
+
+# Reducing the data points down to a random sample of 1000 for better and
+# faster processing
+NYC <- NYC[sample(nrow(NYC), 1000), ]
+
+#There is not enough data on staten Island so removing it from the data
+NYC <- NYC[!(NYC$neighbourhood_group == 'Staten Island'),]
+
+#make sure categorical variables are in data as factors
+NYC$neighbourhood_group <- as.factor(NYC$neighbourhood_group)
+NYC$room_type <- as.factor(NYC$room_type)
+
+# Fit the multiple regression model
+NYC.lm <- lm(reviews_per_year  ~ minimum_nights + availability_365 + number_of_reviews + neighbourhood_group, NYC)
+
+print(NYC.lm)
+```
+
+* The base linear model parameters are shown above
+
+# Assess base model assumption violations. 
+
+## Normality
+```{r, echo=FALSE, comment=''}
+# 2 Thoroughly assess your base model for each of the following assumptions violations. 
+# Make sure your R program is organized to make it clear which assumption is being assessed, 
+# and in your written summary you should use brief but clear and accurate language which 
+# illustrates the reasoning you use in diagnosing any problem with the assumptions:
+
+# Non-normality of the residuals
+plot(NYC.lm, which = 2)
+shapiro.test(rstandard(NYC.lm))
+```
+
+* Residuals are clearly non-normally distributed as shown by the qqplot. There is a right skew in the data. The standardized residuals tend to fall higher than predicted by the current regression model. 
+
+* The Shapiro-Wilkes test also verifies what we observed in the QQ plot, the data does not appear to be normally distributed.
+
+## Model Classification
+
+```{r, echo=FALSE, comment=''}
+# Model misspecification
+plot(x = NYC.lm$fitted, y = rstandard(NYC.lm), xlab = 'fitted', ylab = 'standardized residuals', main = 'Plot of Fitted Vs Standardized Residuals')
+abline(h = 0)
+```
+
+* The fitted vs. residuals plot shows that there is not an even scattering of standardized residuals across the horizontal line drawn at zero. The residuals look like they skew in the positive direction.
+
+* The residuals also appear to fan out as the fitted values get larger.
+
+* This indicates an adjustment needs to be made in the base model for a better fit
+
+## Homoscedacity assumption
+
+```{r, echo=FALSE, comment='', message=FALSE}
+library(car)
+# Heteroscedasticity in the residuals
+plot(NYC.lm, which = 3)
+ncvTest(NYC.lm)
+```
+
+* The Scale-Location plot shows additional verification for heteroscedacity that was hinted at in the last plot. There is a steady increasing linear trend in the absolute value of the standardized residuals. This means the residuals fan out as the fitted values become larger. 
+
+* The NVC test having a very low p value is one additional indicator that equivalent variance is not a safe assumption here
+
+## Influential points
+
+```{r, echo=FALSE, comment='', message=FALSE}
+# Finding outliers
+influencePlot(NYC.lm)
+```
+
+* Clearly point 39876 shown above is an influential point, on the plot it is shown that its cook's distance is far greater than any other points in the dataset. 
+
+# Addressing problems diagnosed with base model 
+
+## Outlier
+
+**Removing the extremely influential point**
+
+```{r, echo=FALSE, comment=''}
+# 3 Now comes the tricky part. Use the suite of tools that have been 
+# investigated to try and address any problems that you diagnosed with your base model. 
+# You do not need to try out all of these, but should use your previous diagnoses of 
+# assumption violations to guide your choices. These tools include...
+influentialIndicies <- whichNames(c('39876'), NYC)
+NYC.lm1 <- update(NYC.lm, ~ ., subset=-influentialIndicies)
+influencePlot(NYC.lm1)
+```
+
+* Removing point 39876 as its cook's distance is incredibly large at 1.61 compared to other data. The largest cooks distance is now only 0.2694369.
+
+## Variance and model classification issue
+
+**Weighted least Squares approach to residuals**
+
+```{r, echo=FALSE, comment=''}
+# After removing the influential point.
+NYC.lm2 <- update(NYC.lm1, ~ ., weights = minimum_nights^2)
+
+# Homoscedasticity in the residuals
+plot(NYC.lm2, which = 3)
+ncvTest(NYC.lm2)
+
+plot(x = NYC.lm2$fitted, y = rstandard(NYC.lm2), xlab = 'fitted', ylab = 'standardized residuals', main = 'Plot of Fitted Vs Standardized Residuals')
+abline(h=0)
+```
+
+* Weighting based on the required minimum nights to stay drastically improved the model's homoscedacity as shown by the horizontal trendline in the scale-location plot. The NCV test results back up this claim, showing a very high p value that points towards a valid homoscedacity assumption.
+
+* Weighting the residuals also appeared to improve some of the positive skewness seen in the base model's standardized residuals vs fitted values plot.
+
+# Summary of transformations done to arrive at final model
+
+* Removing outlier. The removal of the very influential point didn't have as big of an impact as I was hoping for on the model fit, the effect was likely diluted by having such a large sample size.
+
+* Weighted Least Squares approach to residuals. I wanted to avoid using a transformation on the response variable if possible to reduce any potential impacts on the ability to interpret the model. This made the weighted least squares approach make sense. I decided to weight the model residuals based on the predictor that indicates the required minimum nights of stay in an airbnb.
+
+# Final assessment
+
+**Summary of base model:**
+
+```{r, echo=FALSE, comment=''}
+summary(NYC.lm)
+```
+
+**Summary of modified model:**
+
+```{r, echo=FALSE, comment=''}
+summary(NYC.lm2)
+```
+
+**Comparison of other model parameters:**
+
+```{r, echo=FALSE, comment=''}
+dummy <- sprintf('The adjusted R squared value of the base model is %.4f and the adjusted R squared value of the modified model is: %.4f', summary(NYC.lm)$adj.r.squared, summary(NYC.lm2)$adj.r.squared)
+
+cat(dummy)
+
+dummy <- sprintf('The R squared value of the base model is %.4f and the R squared value of the modified model is: %.4f', summary(NYC.lm)$r.squared, summary(NYC.lm2)$r.squared)
+
+cat(dummy)
+
+dummy <- sprintf('The standard error of the base model is %.4f and the standard error of the modified model is: %.4f', summary(NYC.lm)$sigma, summary(NYC.lm2)$sigma)
+
+cat(dummy)
+```
+
+**Some final comments:**
+
+* Weighting residuals based on the minimum nights required for a stay had more of an impact on the model fit and heteroscedacity than I was originally anticipating. There was a drastic improvement to various model fitting parameters (54.48% increase in R squared values). One hypothesis i have for why this is the case is because some places that require long term stays for guests might have more of an ability to make a large impression on a guest than quick stays, resulting in a very high hit rate for reviews.
+
+* The clear sacrifice made here is a standard error that is approximately 4.5 times bigger than the base model's standard error. This is a worthwhile sacrifice as the new model does a much better job at meeting the assumptions for successful regression while still maintaining ease of interpretation.
