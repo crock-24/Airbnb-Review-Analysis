@@ -9,4 +9,4 @@ part 3: Fit the multiple regression model <br />
 part 4 analysis of model fit <br />
 part 5 final model with more assumption check <br />
 
-# R Markdown was used to convert R analysis into pdf's.
+## R Markdown was used to convert R analysis into pdf's.
