@@ -99,7 +99,7 @@ lm(reviews_per_year ~ minimum_nights + availability_365 + number_of_reviews + ne
 - VIFs all < 5 → no multicollinearity
 
 ### Model Selection:
-- All selection methods (forward, backward, stepwise) suggested:
+- forward, backward, stepwise selection methods all suggested to following variables were important to include in model:
   - `minimum_nights`, `availability_365`, `number_of_reviews`, `neighbourhood_group`
 - Final WLS Model (weighted by `minimum_nights²`):
 ```r
